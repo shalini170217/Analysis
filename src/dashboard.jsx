@@ -1,12 +1,18 @@
 import { useState, useEffect } from "react";
 import { fetchTrendingPosts } from "./services/redditService";
 import { analyzeRedditPosts } from "./services/geminiService";
+import {
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer
+} from "recharts";
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function Dashboard() {
   const [categoryInput, setCategoryInput] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [posts, setPosts] = useState([]);
   const [geminiOutput, setGeminiOutput] = useState("");
+  const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,8 +40,9 @@ export default function Dashboard() {
     try {
       setLoading(true);
       setError("");
-      const suggestions = await analyzeRedditPosts(posts);
-      setGeminiOutput(suggestions);
+      const { response, suggestions } = await analyzeRedditPosts(posts);
+      setGeminiOutput(response);
+      setChartData(suggestions);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -47,7 +54,8 @@ export default function Dashboard() {
     e.preventDefault();
     if (categoryInput.trim()) {
       setSelectedCategory(categoryInput.trim());
-      setGeminiOutput(""); // Clear previous results
+      setGeminiOutput("");
+      setChartData([]);
     }
   };
 
@@ -85,11 +93,7 @@ export default function Dashboard() {
 
       {selectedCategory && <h2>Trending in: {selectedCategory}</h2>}
 
-      {error && (
-        <div style={{ color: "red", margin: "1rem 0" }}>
-          {error}
-        </div>
-      )}
+      {error && <div style={{ color: "red", margin: "1rem 0" }}>{error}</div>}
 
       {loading && !posts.length ? (
         <p>Loading posts...</p>
@@ -145,10 +149,34 @@ export default function Dashboard() {
           borderRadius: "4px"
         }}>
           <h3 style={{ marginTop: 0 }}>🛒 Suggested Products:</h3>
-          <pre style={{
-            whiteSpace: "pre-wrap",
-            fontFamily: "inherit"
-          }}>{geminiOutput}</pre>
+          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
+            {geminiOutput}
+          </pre>
+        </div>
+      )}
+
+      {chartData.length > 0 && (
+        <div style={{ marginTop: "2rem" }}>
+          <h3 style={{ marginBottom: "1rem" }}>🥧 Product Influence by Post Upvotes</h3>
+          <ResponsiveContainer width="100%" height={350}>
+            <PieChart>
+              <Pie
+                data={chartData}
+                dataKey="upvotes"
+                nameKey="product"
+                cx="50%"
+                cy="50%"
+                outerRadius={120}
+                label={({ name, upvotes }) => `${name} (${upvotes})`}
+              >
+                {chartData.map((_, index) => (
+                  <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value, name, props) => [`${value} upvotes`, props.payload.product]} />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>

@@ -1,184 +1,284 @@
+// --- Updated Dashboard.jsx ---
 import { useState, useEffect } from "react";
 import { fetchTrendingPosts } from "./services/redditService";
 import { analyzeRedditPosts } from "./services/geminiService";
+import { getTrendByCategory, saveTrend, checkTrendsTable } from "./services/supabaseService";
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
+import { RotateCw } from 'react-feather';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+const CATEGORIES = [
+  "Grocery", "Clothing and Apparel",
+  "Health and Beauty", "Electronics",
+  "Home and Furniture", "Household Essentials",
+  "Toys and Baby", "Sports",
+  "Stationery", "Pets",
+  "Party Supplies", "Pharmacy"
+];
 
 export default function Dashboard() {
-  const [categoryInput, setCategoryInput] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [posts, setPosts] = useState([]);
-  const [geminiOutput, setGeminiOutput] = useState("");
-  const [chartData, setChartData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [dataMap, setDataMap] = useState({});
+  const [loadingCategory, setLoadingCategory] = useState(null);
+  const [errorMap, setErrorMap] = useState({});
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [tableStatus, setTableStatus] = useState({ exists: null });
 
   useEffect(() => {
-    const loadPosts = async () => {
-      if (!selectedCategory.trim()) return;
-
+    const initialize = async () => {
       try {
-        setLoading(true);
-        setError("");
-        const data = await fetchTrendingPosts(selectedCategory);
-        setPosts(data);
-      } catch (err) {
-        setPosts([]);
-        setError(err.message);
+        const status = await checkTrendsTable();
+        setTableStatus(status);
+
+        if (status.exists) {
+          const promises = CATEGORIES.map(async (category) => {
+            try {
+              const trend = await getTrendByCategory(category);
+              return { category, trend };
+            } catch (error) {
+              console.error(`Error fetching ${category}:`, error);
+              return { category, trend: null };
+            }
+          });
+
+          const results = await Promise.all(promises);
+          const newDataMap = {};
+
+          results.forEach(({ category, trend }) => {
+            if (trend) {
+              newDataMap[category] = {
+                chartData: Array.isArray(trend.chart_data) ? trend.chart_data : [],
+                updatedAt: new Date(trend.updated_at).toLocaleString()
+              };
+            }
+          });
+
+          setDataMap(newDataMap);
+        }
+      } catch (error) {
+        console.error("Initialization failed:", error);
       } finally {
-        setLoading(false);
+        setIsInitialLoading(false);
       }
     };
 
-    loadPosts();
-  }, [selectedCategory]);
+    initialize();
+  }, []);
 
-  const handleAnalyze = async () => {
+  const handleRefresh = async (category) => {
+    setLoadingCategory(category);
+    setErrorMap(prev => ({ ...prev, [category]: "" }));
+
     try {
-      setLoading(true);
-      setError("");
+      const posts = await fetchTrendingPosts(category);
       const { response, suggestions } = await analyzeRedditPosts(posts);
-      setGeminiOutput(response);
-      setChartData(suggestions);
+
+      const validChartData = Array.isArray(suggestions)
+        ? suggestions.filter(item => item.product && item.upvotes)
+        : [];
+
+      await saveTrend({
+        category,
+        geminiOutput: response,
+        chartData: validChartData
+      });
+
+      setDataMap(prev => ({
+        ...prev,
+        [category]: {
+          chartData: validChartData,
+          updatedAt: new Date().toLocaleString()
+        }
+      }));
     } catch (err) {
-      setError(err.message);
+      setErrorMap(prev => ({ ...prev, [category]: err.message }));
+      console.error(`Refresh failed for ${category}:`, err);
     } finally {
-      setLoading(false);
+      setLoadingCategory(null);
     }
   };
 
-  const handleSubmitCategory = (e) => {
-    e.preventDefault();
-    if (categoryInput.trim()) {
-      setSelectedCategory(categoryInput.trim());
-      setGeminiOutput("");
-      setChartData([]);
-    }
-  };
+  if (isInitialLoading) {
+    return (
+      <div className="loading-screen">
+        <div className="spinner"></div>
+        <p>Loading dashboard data...</p>
+      </div>
+    );
+  }
+
+  if (tableStatus.exists === false) {
+    return (
+      <div className="error-screen">
+        <h2>Database Error</h2>
+        <p>The `trends` table doesn't exist in your Supabase database.</p>
+        <p>Please create it using the provided SQL schema.</p>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: "2rem", maxWidth: "800px", margin: "0 auto" }}>
-      <h1 style={{ color: "#3b82f6" }}>🛍️ Retail Trend Dashboard</h1>
+    <div className="dashboard-container">
+      <h1 className="dashboard-title"> Retail Trend Dashboard</h1>
 
-      <form onSubmit={handleSubmitCategory} style={{ marginBottom: "1.5rem", display: "flex", gap: "10px" }}>
-        <input
-          type="text"
-          value={categoryInput}
-          onChange={(e) => setCategoryInput(e.target.value)}
-          placeholder="Enter a category (e.g. snacks, shoes, skincare)"
-          style={{
-            flex: 1,
-            padding: "10px",
-            border: "1px solid #ccc",
-            borderRadius: "4px"
-          }}
-        />
-        <button
-          type="submit"
-          style={{
-            padding: "10px 16px",
-            backgroundColor: "#3b82f6",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer"
-          }}
-        >
-          Search
-        </button>
-      </form>
+      <div className="categories-grid">
+        {CATEGORIES.map(category => {
+          const data = dataMap[category];
+          const isLoading = loadingCategory === category;
+          const error = errorMap[category];
 
-      {selectedCategory && <h2>Trending in: {selectedCategory}</h2>}
+          return (
+            <div key={category} className="category-card">
+              <h2>{category}</h2>
 
-      {error && <div style={{ color: "red", margin: "1rem 0" }}>{error}</div>}
+              {error && <p className="error-message">{error}</p>}
+              {!data && !error && (
+                <p className="no-data-message">No data yet. Try refreshing this category.</p>
+              )}
 
-      {loading && !posts.length ? (
-        <p>Loading posts...</p>
-      ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {posts.map(post => (
-            <li key={post.id} style={{
-              marginBottom: "1.5rem",
-              padding: "1rem",
-              border: "1px solid #e5e7eb",
-              borderRadius: "4px"
-            }}>
-              <h3 style={{ marginTop: 0 }}>{post.title}</h3>
-              <p>👍 {post.upvotes} upvotes</p>
-              <a
-                href={post.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: "#3b82f6" }}
-              >
-                View Post
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
+              {data?.chartData?.length > 0 ? (
+                <div className="chart-container">
+                  <h4>📊 Product Influence</h4>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={data.chartData}
+                        dataKey="upvotes"
+                        nameKey="product"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ product, upvotes }) => `${product} (${upvotes})`}
+                      >
+                        {data.chartData.map((_, index) => (
+                          <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => `${value} upvotes`} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="no-chart-message">No chart data available</p>
+              )}
 
-      {posts.length > 0 && (
-        <button
-          onClick={handleAnalyze}
-          disabled={loading}
-          style={{
-            marginTop: "1rem",
-            padding: "10px 16px",
-            backgroundColor: "#3b82f6",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-            opacity: loading ? 0.5 : 1
-          }}
-        >
-          {loading ? "Analyzing..." : "🧠 Analyze with Gemini"}
-        </button>
-      )}
+              <div className="card-footer">
+                {data?.updatedAt && (
+                  <small className="update-time">Last updated: {data.updatedAt}</small>
+                )}
+                <button
+                  onClick={() => handleRefresh(category)}
+                  disabled={isLoading}
+                  className={`refresh-button ${isLoading ? "loading" : ""}`}
+                >
+                  {isLoading ? (
+                    <>
+                      <RotateCw className="spinning-icon" size={16} />
+                      <span>Refreshing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCw size={16} />
+                      <span>Refresh</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-      {geminiOutput && (
-        <div style={{
-          marginTop: "1.5rem",
-          background: "#f8fafc",
-          padding: "1rem",
-          border: "1px solid #e5e7eb",
-          borderRadius: "4px"
-        }}>
-          <h3 style={{ marginTop: 0 }}>🛒 Suggested Products:</h3>
-          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
-            {geminiOutput}
-          </pre>
-        </div>
-      )}
-
-      {chartData.length > 0 && (
-        <div style={{ marginTop: "2rem" }}>
-          <h3 style={{ marginBottom: "1rem" }}>🥧 Product Influence by Post Upvotes</h3>
-          <ResponsiveContainer width="100%" height={350}>
-            <PieChart>
-              <Pie
-                data={chartData}
-                dataKey="upvotes"
-                nameKey="product"
-                cx="50%"
-                cy="50%"
-                outerRadius={120}
-                label={({ name, upvotes }) => `${name} (${upvotes})`}
-              >
-                {chartData.map((_, index) => (
-                  <Cell key={index} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value, name, props) => [`${value} upvotes`, props.payload.product]} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      <style jsx>{`
+        .dashboard-container {
+          padding: 2rem;
+          max-width: 1200px;
+          margin: 0 auto;
+        }
+        .dashboard-title {
+          color: #3b82f6;
+          text-align: center;
+          margin-bottom: 2rem;
+        }
+        .categories-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1.5rem;
+        }
+        .category-card {
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          padding: 1.5rem;
+          background-color: #f9fafb;
+          min-height: 350px;
+          display: flex;
+          flex-direction: column;
+        }
+        .error-message {
+          color: #ef4444;
+        }
+        .no-data-message, .no-chart-message {
+          color: #6b7280;
+        }
+        .chart-container {
+          margin: 1rem 0;
+          flex-grow: 1;
+        }
+        .card-footer {
+          margin-top: auto;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .update-time {
+          color: #6b7280;
+        }
+        .refresh-button {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 1rem;
+          background-color: #3b82f6;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+        .refresh-button:hover {
+          opacity: 0.9;
+        }
+        .refresh-button.loading {
+          opacity: 0.7;
+        }
+        .spinning-icon {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .loading-screen, .error-screen {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          text-align: center;
+        }
+        .spinner {
+          border: 4px solid rgba(0, 0, 0, 0.1);
+          border-radius: 50%;
+          border-top: 4px solid #3b82f6;
+          width: 40px;
+          height: 40px;
+          animation: spin 1s linear infinite;
+          margin-bottom: 1rem;
+        }
+      `}</style>
     </div>
   );
 }

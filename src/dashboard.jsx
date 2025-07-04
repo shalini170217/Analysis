@@ -1,5 +1,6 @@
-// --- Updated Dashboard.jsx ---
 import { useState, useEffect } from "react";
+import bgImage from "./assets/bg.jpg"; // adjust path as needed
+
 import { fetchTrendingPosts } from "./services/redditService";
 import { analyzeRedditPosts } from "./services/geminiService";
 import { getTrendByCategory, saveTrend, checkTrendsTable } from "./services/supabaseService";
@@ -7,8 +8,6 @@ import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
 import { RotateCw } from 'react-feather';
-
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 const CATEGORIES = [
   "Grocery", "Clothing and Apparel",
@@ -19,12 +18,34 @@ const CATEGORIES = [
   "Party Supplies", "Pharmacy"
 ];
 
+// Subtle pastel card background colors
+const CARD_COLORS = {
+  "Grocery": "#fef3c7",
+  "Clothing and Apparel": "#e0f2fe",
+  "Health and Beauty": "#fce7f3",
+  "Electronics": "#ede9fe",
+  "Home and Furniture": "#f3f4f6",
+  "Household Essentials": "#fef9c3",
+  "Toys and Baby": "#ffe4e6",
+  "Sports": "#d1fae5",
+  "Stationery": "#e0e7ff",
+  "Pets": "#f1f5f9",
+  "Party Supplies": "#faf5ff",
+  "Pharmacy": "#f0fdf4"
+};
+
+// Subtle pie slice colors
+const PIE_COLORS = [
+  "#3b82f6", "#60a5fa", "#38bdf8", "#2563eb", "#818cf8",
+  "#4ade80", "#22c55e", "#10b981", "#34d399", "#fde68a"
+];
+
 export default function Dashboard() {
   const [dataMap, setDataMap] = useState({});
   const [loadingCategory, setLoadingCategory] = useState(null);
   const [errorMap, setErrorMap] = useState({});
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const [tableStatus, setTableStatus] = useState({ exists: null });
+  const [tableStatus, setTableStatus] = useState({ exists: null, hasData: null });
 
   useEffect(() => {
     const initialize = async () => {
@@ -113,34 +134,55 @@ export default function Dashboard() {
     return (
       <div className="error-screen">
         <h2>Database Error</h2>
-        <p>The `trends` table doesn't exist in your Supabase database.</p>
-        <p>Please create it using the provided SQL schema.</p>
+        <p>The trends table doesn't exist in your Supabase database.</p>
+        <p>Please create the table using the SQL schema provided.</p>
+      </div>
+    );
+  }
+
+  if (tableStatus.exists === true && tableStatus.hasData === false) {
+    return (
+      <div className="empty-screen">
+        <h2>No Data Available</h2>
+        <p>Your database is connected but contains no trend data.</p>
+        <p>Try refreshing some categories to populate the dashboard.</p>
       </div>
     );
   }
 
   return (
-    <div className="dashboard-container">
+    <div
+  className="dashboard-container"
+  style={{
+    backgroundImage: `url(${bgImage})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
+    minHeight: "100vh",
+    padding: "2rem"
+  }}
+>
+
       <h1 className="dashboard-title"> Retail Trend Dashboard</h1>
 
       <div className="categories-grid">
-        {CATEGORIES.map(category => {
+        {CATEGORIES.map((category, catIndex) => {
           const data = dataMap[category];
           const isLoading = loadingCategory === category;
           const error = errorMap[category];
 
           return (
-            <div key={category} className="category-card">
+            <div
+              key={category}
+              className="category-card"
+              style={{ backgroundColor: CARD_COLORS[category] }}
+            >
               <h2>{category}</h2>
 
               {error && <p className="error-message">{error}</p>}
-              {!data && !error && (
-                <p className="no-data-message">No data yet. Try refreshing this category.</p>
-              )}
 
               {data?.chartData?.length > 0 ? (
                 <div className="chart-container">
-                  <h4>📊 Product Influence</h4>
                   <ResponsiveContainer width="100%" height={250}>
                     <PieChart>
                       <Pie
@@ -149,11 +191,15 @@ export default function Dashboard() {
                         nameKey="product"
                         cx="50%"
                         cy="50%"
-                        outerRadius={80}
-                        label={({ product, upvotes }) => `${product} (${upvotes})`}
+                        outerRadius={90}
+                        labelLine={false}
+                        label={false}
                       >
                         {data.chartData.map((_, index) => (
-                          <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                          <Cell
+                            key={index}
+                            fill={PIE_COLORS[index % PIE_COLORS.length]}
+                          />
                         ))}
                       </Pie>
                       <Tooltip formatter={(value) => `${value} upvotes`} />
@@ -167,12 +213,14 @@ export default function Dashboard() {
 
               <div className="card-footer">
                 {data?.updatedAt && (
-                  <small className="update-time">Last updated: {data.updatedAt}</small>
+                  <small className="update-time">
+                    Last updated: {data.updatedAt}
+                  </small>
                 )}
                 <button
                   onClick={() => handleRefresh(category)}
                   disabled={isLoading}
-                  className={`refresh-button ${isLoading ? "loading" : ""}`}
+                  className={`refresh-button ${isLoading ? 'loading' : ''}`}
                 >
                   {isLoading ? (
                     <>
@@ -195,47 +243,63 @@ export default function Dashboard() {
       <style jsx>{`
         .dashboard-container {
           padding: 2rem;
-          max-width: 1200px;
+          max-width: 1400px;
           margin: 0 auto;
         }
+
         .dashboard-title {
-          color: #3b82f6;
+          color:rgb(0, 0, 0);
           text-align: center;
           margin-bottom: 2rem;
         }
+
         .categories-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
-          gap: 1.5rem;
+          gap: 2rem;
         }
+
         .category-card {
           border: 1px solid #e5e7eb;
-          border-radius: 8px;
-          padding: 1.5rem;
-          background-color: #f9fafb;
-          min-height: 350px;
+          border-radius: 16px;
+          padding: 2rem;
+          min-height: 480px;
           display: flex;
           flex-direction: column;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+          transition: transform 0.2s ease;
         }
+
+        .category-card:hover {
+          transform: scale(1.01);
+        }
+
         .error-message {
           color: #ef4444;
+          margin: 0.5rem 0;
         }
-        .no-data-message, .no-chart-message {
+
+        .no-chart-message {
           color: #6b7280;
+          margin: 1rem 0;
         }
+
         .chart-container {
           margin: 1rem 0;
           flex-grow: 1;
         }
+
         .card-footer {
           margin-top: auto;
           display: flex;
           justify-content: space-between;
           align-items: center;
         }
+
         .update-time {
           color: #6b7280;
         }
+
         .refresh-button {
           display: flex;
           align-items: center;
@@ -244,24 +308,29 @@ export default function Dashboard() {
           background-color: #3b82f6;
           color: white;
           border: none;
-          border-radius: 4px;
+          border-radius: 6px;
           cursor: pointer;
           transition: opacity 0.2s;
         }
+
         .refresh-button:hover {
           opacity: 0.9;
         }
+
         .refresh-button.loading {
           opacity: 0.7;
         }
+
         .spinning-icon {
           animation: spin 1s linear infinite;
         }
+
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
-        .loading-screen, .error-screen {
+
+        .loading-screen, .error-screen, .empty-screen {
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -269,6 +338,7 @@ export default function Dashboard() {
           height: 100vh;
           text-align: center;
         }
+
         .spinner {
           border: 4px solid rgba(0, 0, 0, 0.1);
           border-radius: 50%;

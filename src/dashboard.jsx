@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import bgImage from "./assets/bg.jpg"; // adjust path as needed
+import { useNavigate } from "react-router-dom";
 
 import { fetchTrendingPosts } from "./services/redditService";
-import { analyzeRedditPosts } from "./services/geminiService";
-import { getTrendByCategory, saveTrend, checkTrendsTable } from "./services/supabaseService";
+import { analyzeRedditPosts, generatePosterContent } from "./services/geminiService";
+import { getTrendByCategory, saveTrend, checkTrendsTable, savePoster } from "./services/supabaseService";
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
-import { RotateCw } from 'react-feather';
+import { RotateCw, Image } from 'react-feather';
 
 const CATEGORIES = [
   "Grocery", "Clothing and Apparel",
@@ -46,6 +47,8 @@ export default function Dashboard() {
   const [errorMap, setErrorMap] = useState({});
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [tableStatus, setTableStatus] = useState({ exists: null, hasData: null });
+  const [posterLoading, setPosterLoading] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const initialize = async () => {
@@ -71,7 +74,8 @@ export default function Dashboard() {
             if (trend) {
               newDataMap[category] = {
                 chartData: Array.isArray(trend.chart_data) ? trend.chart_data : [],
-                updatedAt: new Date(trend.updated_at).toLocaleString()
+                updatedAt: new Date(trend.updated_at).toLocaleString(),
+                geminiOutput: trend.gemini_output || ""
               };
             }
           });
@@ -110,7 +114,8 @@ export default function Dashboard() {
         ...prev,
         [category]: {
           chartData: validChartData,
-          updatedAt: new Date().toLocaleString()
+          updatedAt: new Date().toLocaleString(),
+          geminiOutput: response
         }
       }));
     } catch (err) {
@@ -118,6 +123,39 @@ export default function Dashboard() {
       console.error(`Refresh failed for ${category}:`, err);
     } finally {
       setLoadingCategory(null);
+    }
+  };
+
+  const handleCreatePoster = async (category) => {
+    setPosterLoading(category);
+    try {
+      const categoryData = dataMap[category];
+      if (!categoryData?.geminiOutput) {
+        throw new Error("No analysis data available for this category");
+      }
+
+      // Generate poster content using Gemini
+      const posterContent = await generatePosterContent({
+        category,
+        analysis: categoryData.geminiOutput,
+        trends: categoryData.chartData
+      });
+
+      // Save the poster to the database
+      await savePoster({
+        category,
+        content: posterContent,
+        analysis: categoryData.geminiOutput,
+        chartData: categoryData.chartData
+      });
+
+      // Navigate to home page to view the poster
+      navigate("/");
+    } catch (err) {
+      setErrorMap(prev => ({ ...prev, [category]: err.message }));
+      console.error(`Poster creation failed for ${category}:`, err);
+    } finally {
+      setPosterLoading(null);
     }
   };
 
@@ -152,23 +190,23 @@ export default function Dashboard() {
 
   return (
     <div
-  className="dashboard-container"
-  style={{
-    backgroundImage: `url(${bgImage})`,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-    backgroundRepeat: "no-repeat",
-    minHeight: "100vh",
-    padding: "2rem"
-  }}
->
-
-      <h1 className="dashboard-title"> Retail Trend Dashboard</h1>
+      className="dashboard-container"
+      style={{
+        backgroundImage: `url(${bgImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        minHeight: "100vh",
+        padding: "2rem"
+      }}
+    >
+      <h1 className="dashboard-title">Retail Trend Dashboard</h1>
 
       <div className="categories-grid">
         {CATEGORIES.map((category, catIndex) => {
           const data = dataMap[category];
           const isLoading = loadingCategory === category;
+          const isPosterLoading = posterLoading === category;
           const error = errorMap[category];
 
           return (
@@ -217,23 +255,42 @@ export default function Dashboard() {
                     Last updated: {data.updatedAt}
                   </small>
                 )}
-                <button
-                  onClick={() => handleRefresh(category)}
-                  disabled={isLoading}
-                  className={`refresh-button ${isLoading ? 'loading' : ''}`}
-                >
-                  {isLoading ? (
-                    <>
-                      <RotateCw className="spinning-icon" size={16} />
-                      <span>Refreshing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RotateCw size={16} />
-                      <span>Refresh</span>
-                    </>
-                  )}
-                </button>
+                <div className="button-group">
+                  <button
+                    onClick={() => handleRefresh(category)}
+                    disabled={isLoading || isPosterLoading}
+                    className={`refresh-button ${isLoading ? 'loading' : ''}`}
+                  >
+                    {isLoading ? (
+                      <>
+                        <RotateCw className="spinning-icon" size={16} />
+                        <span>Refreshing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RotateCw size={16} />
+                        <span>Refresh</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleCreatePoster(category)}
+                    disabled={isPosterLoading || !data?.geminiOutput}
+                    className={`poster-button ${isPosterLoading ? 'loading' : ''}`}
+                  >
+                    {isPosterLoading ? (
+                      <>
+                        <RotateCw className="spinning-icon" size={16} />
+                        <span>Creating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Image size={16} />
+                        <span>Create Poster</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           );
@@ -244,7 +301,7 @@ export default function Dashboard() {
         .dashboard-container {
           padding: 2rem;
           max-width: 1400px;
-          margin: 0 auto;
+          
         }
 
         .dashboard-title {
@@ -292,32 +349,46 @@ export default function Dashboard() {
         .card-footer {
           margin-top: auto;
           display: flex;
-          justify-content: space-between;
-          align-items: center;
+          flex-direction: column;
+          gap: 0.5rem;
         }
 
         .update-time {
           color: #6b7280;
         }
 
-        .refresh-button {
+        .button-group {
+          display: flex;
+          gap: 0.5rem;
+        }
+
+        .refresh-button, .poster-button {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           padding: 0.5rem 1rem;
-          background-color: #3b82f6;
           color: white;
           border: none;
           border-radius: 6px;
           cursor: pointer;
           transition: opacity 0.2s;
+          flex: 1;
+          justify-content: center;
         }
 
-        .refresh-button:hover {
+        .refresh-button {
+          background-color: #3b82f6;
+        }
+
+        .poster-button {
+          background-color: #10b981;
+        }
+
+        .refresh-button:hover, .poster-button:hover {
           opacity: 0.9;
         }
 
-        .refresh-button.loading {
+        .refresh-button.loading, .poster-button.loading {
           opacity: 0.7;
         }
 

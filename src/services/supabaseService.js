@@ -58,3 +58,32 @@ export const checkTrendsTable = async () => {
     throw error;
   }
 };
+
+export const savePoster = async ({ category, content, analysis, chartData }) => {
+  const { data, error } = await supabase
+    .from('posters')
+    .upsert([
+      {
+        category,
+        content,
+        analysis,
+        chart_data: chartData,
+        updated_at: new Date().toISOString()
+      }
+    ])
+    .select();
+
+  if (error) throw error;
+  return data;
+};
+export const getLatestPoster = async () => {
+  const { data, error } = await supabase
+    .from('posters')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) throw error;
+  return data;
+};

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Routes, Route, Link } from 'react-router-dom';
 import { getAllPosters } from './services/supabaseService';
 import Dashboard from './dashboard'; // Ensure this component exists
-
+import ProductsAdmin from './products';
 export default function App() {
   const [allPosters, setAllPosters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +28,7 @@ export default function App() {
       <nav className="navbar">
         <Link to="/" className="nav-link">Home</Link>
         <Link to="/dashboard" className="nav-link">Dashboard</Link>
+        <Link to="/products" className='nav-link'>Add Products</Link>
       </nav>
 
       {/* Routes */}
@@ -42,22 +43,22 @@ export default function App() {
                 <div className="error-container">Error: {error}</div>
               ) : allPosters.length > 0 ? (
                 <div className="posters-slideshow">
-                  <div className="slideshow-container">
-                    {allPosters.map((p) => (
-                      <div key={p.id} className="poster-slide">
-                        <h3>{p.category} Trends</h3>
-                        <div
-                          className="slide-content"
-                          dangerouslySetInnerHTML={{ __html: p.content }}
-                        />
-                        <div className="slide-footer">
-                          <small>{new Date(p.updated_at).toLocaleDateString()}</small>
-                          <Link  className="view-link">
-                            Shop Now
-                          </Link>
+                  <div className="marquee-wrapper">
+                    <div className="slideshow-container marquee-track">
+                      {[...allPosters, ...allPosters].map((p, i) => (
+                        <div key={`${p.id}-${i}`} className="poster-slide">
+                          <h3>{p.category} Trends</h3>
+                          <div
+                            className="slide-content"
+                            dangerouslySetInnerHTML={{ __html: p.content }}
+                          />
+                          <div className="slide-footer">
+                            <small>{new Date(p.updated_at).toLocaleDateString()}</small>
+                            <Link className="view-link">Shop Now</Link>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -69,13 +70,12 @@ export default function App() {
           }
         />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/products" element={<ProductsAdmin />} />
+
       </Routes>
     </div>
   );
 }
-
-
-// Styles
 const styles = `
   html, body {
     margin: 0;
@@ -92,7 +92,6 @@ const styles = `
     flex-direction: column;
   }
 
-  /* Navbar styles */
   .navbar {
     padding: 1rem;
     background: #3b82f6;
@@ -114,37 +113,39 @@ const styles = `
     background-color: rgba(255,255,255,0.2);
   }
 
-  /* Main content styles */
   .home-container {
     flex: 1;
     padding: 1rem;
   }
 
-  /* Slideshow styles */
   .posters-slideshow {
     width: 100%;
     padding: 2rem 0;
   }
 
-  .slideshow-title {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    color: #2d3748;
-    font-size: 1.5rem;
+  .marquee-wrapper {
+    overflow: hidden;
+    width: 100%;
+    position: relative;
   }
 
-  .slideshow-container {
+  .marquee-track {
     display: flex;
-    overflow-x: auto;
-    gap: 1.5rem;
-    padding: 1rem;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
+    animation: scrollMarquee 60s linear infinite;
+    width: max-content;
+  }
+
+  @keyframes scrollMarquee {
+    0% {
+      transform: translateX(0%);
+    }
+    100% {
+      transform: translateX(-50%);
+    }
   }
 
   .poster-slide {
     flex: 0 0 320px;
-    scroll-snap-align: start;
     background: white;
     border-radius: 12px;
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -154,6 +155,7 @@ const styles = `
     height: 420px;
     overflow: hidden;
     transition: transform 0.2s ease;
+    margin-right: 1.5rem;
   }
 
   .poster-slide:hover {
@@ -212,7 +214,6 @@ const styles = `
     background: rgba(59, 130, 246, 0.2);
   }
 
-  /* Utility styles */
   .loading-container,
   .error-container,
   .empty-container {
@@ -242,17 +243,12 @@ const styles = `
     .home-container {
       padding: 0.5rem;
     }
-    
-    .slideshow-title {
-      font-size: 1.3rem;
-    }
   }
 `;
 
-// Inject styles
 if (!document.querySelector('style[data-poster-styles]')) {
   const styleElement = document.createElement('style');
   styleElement.innerHTML = styles;
   styleElement.setAttribute('data-poster-styles', '');
   document.head.appendChild(styleElement);
-} 
+}

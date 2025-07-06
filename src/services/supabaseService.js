@@ -87,3 +87,12 @@ export const getLatestPoster = async () => {
   if (error) throw error;
   return data;
 };
+export async function getAllPosters() {
+  const { data, error } = await supabase
+    .from('posters')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  
+  if (error) throw error;
+  return data;
+}

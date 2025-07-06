@@ -1,94 +1,87 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, Link } from "react-router-dom";
-import Dashboard from "./dashboard";
-import { getLatestPoster } from "./services/supabaseService";
+import { Routes, Route, Link } from 'react-router-dom';
+import { getAllPosters } from './services/supabaseService';
+import Dashboard from './dashboard'; // Ensure this component exists
 
 export default function App() {
+  const [allPosters, setAllPosters] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const posters = await getAllPosters();
+        setAllPosters(posters);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
   return (
     <div className="app-container">
-      <NavBar />
+      {/* Navbar */}
+      <nav className="navbar">
+        <Link to="/" className="nav-link">Home</Link>
+        <Link to="/dashboard" className="nav-link">Dashboard</Link>
+      </nav>
+
+      {/* Routes */}
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route
+          path="/"
+          element={
+            <div className="home-container">
+              {loading ? (
+                <div className="loading-container">Loading posters...</div>
+              ) : error ? (
+                <div className="error-container">Error: {error}</div>
+              ) : allPosters.length > 0 ? (
+                <div className="posters-slideshow">
+                  <div className="slideshow-container">
+                    {allPosters.map((p) => (
+                      <div key={p.id} className="poster-slide">
+                        <h3>{p.category} Trends</h3>
+                        <div
+                          className="slide-content"
+                          dangerouslySetInnerHTML={{ __html: p.content }}
+                        />
+                        <div className="slide-footer">
+                          <small>{new Date(p.updated_at).toLocaleDateString()}</small>
+                          <Link  className="view-link">
+                            Shop Now
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="empty-container">
+                  No posters available. <Link to="/dashboard">Create your first poster</Link>
+                </div>
+              )}
+            </div>
+          }
+        />
         <Route path="/dashboard" element={<Dashboard />} />
       </Routes>
     </div>
   );
 }
 
-function NavBar() {
-  return (
-    <nav className="navbar">
-      <Link to="/" className="nav-link">Home</Link>
-      <Link to="/dashboard" className="nav-link">Dashboard</Link>
-    </nav>
-  );
-}
 
-function HomePage() {
-  const [poster, setPoster] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const fetchPoster = async () => {
-      try {
-        const latestPoster = await getLatestPoster();
-        console.log("✅ Poster fetched from Supabase:", latestPoster);
-        setPoster(latestPoster);
-      } catch (err) {
-        setError(err.message);
-        console.error("❌ Error fetching poster:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPoster();
-  }, []);
-
-  const renderPosterContent = () => {
-    console.log("📦 Poster raw content:", poster?.content);
-
-    if (!poster?.content?.trim()) {
-      return (
-        <div style={{ color: "#999" }}>
-          ⚠️ Poster is empty or not generated yet.
-        </div>
-      );
-    }
-
-    return (
-      <div 
-        className="poster-content-wrapper"
-        dangerouslySetInnerHTML={{ __html: poster.content }}
-      />
-    );
-  };
-
-  if (loading) return <div className="loading-container">Loading poster...</div>;
-  if (error) return <div className="error-container">Error: {error}</div>;
-  if (!poster) return <div className="empty-container">No poster available. Create one from the dashboard.</div>;
-
-  return (
-    <div className="poster-container">
-      <h1>{poster.category} Trends</h1>
-      <div className="poster-meta">
-        Last updated: {new Date(poster.updated_at).toLocaleString()}
-      </div>
-      {renderPosterContent()}
-    </div>
-  );
-}
+// Styles
 const styles = `
- html, body {
+  html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    display: block;
-  }
-
-  body {
-    font-family: sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: #f9fafb;
     color: #111827;
   }
@@ -97,9 +90,9 @@ const styles = `
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    align-items: stretch;
   }
 
+  /* Navbar styles */
   .navbar {
     padding: 1rem;
     background: #3b82f6;
@@ -121,54 +114,145 @@ const styles = `
     background-color: rgba(255,255,255,0.2);
   }
 
-  .poster-container {
-    max-width: 800px;
-    margin: 2rem auto;
-    padding: 20px;
+  /* Main content styles */
+  .home-container {
+    flex: 1;
+    padding: 1rem;
   }
 
-  .poster-meta {
-    color: #6b7280;
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
+  /* Slideshow styles */
+  .posters-slideshow {
+    width: 100%;
+    padding: 2rem 0;
   }
 
-  .poster-content-wrapper {
-    margin-top: 20px;
-    border: 1px solid #eee;
-    padding: 20px;
-    border-radius: 8px;
+  .slideshow-title {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: #2d3748;
+    font-size: 1.5rem;
+  }
+
+  .slideshow-container {
+    display: flex;
+    overflow-x: auto;
+    gap: 1.5rem;
+    padding: 1rem;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .poster-slide {
+    flex: 0 0 320px;
+    scroll-snap-align: start;
     background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    height: 420px;
+    overflow: hidden;
+    transition: transform 0.2s ease;
   }
 
-  .poster-content-wrapper img {
+  .poster-slide:hover {
+    transform: translateY(-5px);
+  }
+
+  .poster-slide h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.2rem;
+    color: #3b82f6;
+  }
+
+  .slide-content {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+  }
+
+  .slide-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .slide-content::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 3px;
+  }
+
+  .slide-content img {
     max-width: 100%;
     height: auto;
-    border-radius: 4px;
-  }
-
-  .poster-content-wrapper h1,
-  .poster-content-wrapper h2,
-  .poster-content-wrapper h3 {
-    color: #333;
-    margin-top: 1rem;
+    border-radius: 6px;
     margin-bottom: 0.5rem;
   }
 
-  .poster-content-wrapper p {
-    color: #555;
-    line-height: 1.6;
-    margin-bottom: 1rem;
+  .slide-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
   }
 
+  .view-link {
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.1);
+    transition: all 0.2s ease;
+  }
+
+  .view-link:hover {
+    background: rgba(59, 130, 246, 0.2);
+  }
+
+  /* Utility styles */
   .loading-container,
   .error-container,
   .empty-container {
     text-align: center;
-    padding: 2rem;
+    padding: 3rem;
     font-size: 1.1rem;
-    color: #777;
+    color: #64748b;
+  }
+
+  .empty-container a {
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .empty-container a:hover {
+    text-decoration: underline;
+  }
+
+  @media (max-width: 768px) {
+    .poster-slide {
+      flex: 0 0 280px;
+      height: 380px;
+      padding: 1rem;
+    }
+    
+    .home-container {
+      padding: 0.5rem;
+    }
+    
+    .slideshow-title {
+      font-size: 1.3rem;
+    }
   }
 `;
 
-document.head.insertAdjacentHTML('beforeend', `<style>${styles}</style>`);
+// Inject styles
+if (!document.querySelector('style[data-poster-styles]')) {
+  const styleElement = document.createElement('style');
+  styleElement.innerHTML = styles;
+  styleElement.setAttribute('data-poster-styles', '');
+  document.head.appendChild(styleElement);
+} 

@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const API_KEY = "AIzaSyBbHukH69CZdhBYOG69cOvcn8hnafbR74k";
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes cache
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({
@@ -20,7 +20,7 @@ export async function analyzeRedditPosts(posts) {
   const usedPosts = posts.slice(0, 2); // Use top 2 posts
   const cacheKey = usedPosts.map(p => p.id).join('-');
 
-  // Check cache first
+  // Check cache
   if (responseCache.has(cacheKey)) {
     const cached = responseCache.get(cacheKey);
     if (Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -42,15 +42,13 @@ ${usedPosts.map(p => `- ${p.title}`).join('\n')}
   try {
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    
-    // Extract text from response
+
     let rawText;
     try {
-      rawText = await response.text(); // For newer SDK versions
+      rawText = await response.text(); // For newer SDK
     } catch {
-      // Fallback for different response formats
       rawText = response.candidates?.[0]?.content?.parts?.[0]?.text || 
-               "⚠️ Could not extract response text";
+                "⚠️ Could not extract response text";
     }
 
     const lines = rawText
@@ -69,7 +67,6 @@ ${usedPosts.map(p => `- ${p.title}`).join('\n')}
       suggestions
     };
 
-    // Update cache
     responseCache.set(cacheKey, {
       data,
       timestamp: Date.now()
@@ -87,6 +84,8 @@ ${usedPosts.map(p => `- ${p.title}`).join('\n')}
 }
 
 export const generatePosterContent = async ({ category, analysis, trends }) => {
+  const trimmedTrends = trends.slice(0, 3).map(({ postTitle, upvotes }) => ({ postTitle, upvotes }));
+
   const prompt = `
 You are an HTML5 generator. Create a SINGLE, COMPLETE HTML document for a ${category} promotional poster.
 
@@ -111,20 +110,19 @@ STRICT RULES:
 
 Content requirements:
 - Vibrant title with emoji
-- 3 product cards with trends data: ${JSON.stringify(trends.slice(0, 3))}
-- Analysis summary: ${analysis.slice(0, 200)}
+- List of 3 Reddit posts with title and upvote count (no product name)
+- Short analysis summary: ${analysis.slice(0, 200)}
 - Mobile-responsive layout
+
+Trend Data: ${JSON.stringify(trimmedTrends)}
 `;
 
   try {
-    // Attempt to generate the poster content
     const result = await model.generateContent(prompt);
     const response = await result.response;
     let htmlContent = await response.text();
 
-    // Clean and validate the generated HTML
     htmlContent = cleanAndValidateHTML(htmlContent);
-    
     return htmlContent;
   } catch (error) {
     console.error("Poster generation failed:", error);
@@ -132,35 +130,8 @@ Content requirements:
   }
 };
 
-// Helper function to clean and validate HTML
-function cleanAndValidateHTML(htmlContent) {
-  // 1. Remove any markdown code blocks
-  htmlContent = htmlContent.replace(/```(html)?/g, '').trim();
-
-  // 2. Fix nested HTML documents
-  if ((htmlContent.match(/<!DOCTYPE html>/g) || []).length > 1) {
-    const lastDocStart = htmlContent.lastIndexOf('<!DOCTYPE html>');
-    htmlContent = htmlContent.slice(lastDocStart);
-  }
-
-  // 3. Validate HTML structure
-  const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
-  
-  const errors = [];
-  if (!htmlContent.includes('</html>')) errors.push('Missing </html>');
-  if (!htmlContent.includes('</body>')) errors.push('Missing </body>');
-  if (doc.querySelector('parsererror')) errors.push('Invalid HTML');
-
-  if (errors.length > 0) {
-    throw new Error(`HTML validation failed: ${errors.join(', ')}`);
-  }
-
-  return htmlContent;
-}
-
-// Helper function to generate fallback content
+// --- Fallback content: only shows postTitle + upvotes ---
 function generateFallbackContent(category, trends) {
-  // Create trending items list from chart_attribute data
   const trendingItems = trends.slice(0, 3).map(item => 
     `<li style="
       margin: 10px 0;
@@ -171,11 +142,8 @@ function generateFallbackContent(category, trends) {
       display: flex;
       justify-content: space-between;
     ">
-      <div>
-        <strong style="display: block; margin-bottom: 5px; color: #212529;">
-          ${item.postTitle}
-        </strong>
-        <span style="color: #495057;">${item.product}</span>
+      <div style="color: #212529; font-weight: 600;">
+        ${item.product}
       </div>
       <div style="
         color: #6c757d; 
@@ -189,7 +157,6 @@ function generateFallbackContent(category, trends) {
     </li>`
   ).join('');
 
-  // Return complete fallback HTML
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -244,27 +211,45 @@ function generateFallbackContent(category, trends) {
       <span>Trending ${category} Picks</span>
     </h1>
     
-    <p style="margin-bottom: 20px; color: #495057;">
-      Based on ${trends.length} community discussions with high engagement
-    </p>
-    
     <ul style="list-style: none; padding: 0; margin: 0;">
       ${trendingItems}
     </ul>
     
     <div style="text-align: center; margin-top: 30px;">
       <p style="font-size: 1.1rem; margin-bottom: 20px; color: #212529;">
-        Ready to join ${trends.length > 1 ? 'these trends' : 'this trend'}?
+        Ready to explore these picks?
       </p>
-      <a href="/products?category=${encodeURIComponent(category)}" class="cta-button">
-        Shop Now →
-      </a>
+      
     </div>
   </div>
 </body>
 </html>`;
 }
-// Utility function to clear cache (optional)
+
+
+// Clean HTML from Gemini
+function cleanAndValidateHTML(htmlContent) {
+  htmlContent = htmlContent.replace(/```(html)?/g, '').trim();
+
+  if ((htmlContent.match(/<!DOCTYPE html>/g) || []).length > 1) {
+    const lastDocStart = htmlContent.lastIndexOf('<!DOCTYPE html>');
+    htmlContent = htmlContent.slice(lastDocStart);
+  }
+
+  const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+  const errors = [];
+
+  if (!htmlContent.includes('</html>')) errors.push('Missing </html>');
+  if (!htmlContent.includes('</body>')) errors.push('Missing </body>');
+  if (doc.querySelector('parsererror')) errors.push('Invalid HTML');
+
+  if (errors.length > 0) {
+    throw new Error(`HTML validation failed: ${errors.join(', ')}`);
+  }
+
+  return htmlContent;
+}
+
 export function clearGeminiCache() {
   responseCache.clear();
 }

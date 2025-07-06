@@ -96,3 +96,8 @@ export async function getAllPosters() {
   if (error) throw error;
   return data;
 }
+export const getAllProductsByCategory = async (tableName) => {
+  const { data, error } = await supabase.from(tableName).select('*');
+  if (error) throw error;
+  return data;
+};
